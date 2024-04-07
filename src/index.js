@@ -126,16 +126,25 @@ function commitWork(fiber) {
     }
     const domParent = domParentFiber.dom;
 
-    if (fiber.effectTag === "PLACEMENT" && fiber.dom != null) {
-        domParent.appendChild(fiber.dom);
-    } else if (fiber.effectTag === "UPDATE" && fiber.dom != null) {
-        updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+    if (fiber.effectTag === "PLACEMENT") {
+        if (fiber.dom != null) {
+            domParent.appendChild(fiber.dom);
+        }
+        runEffects(fiber);
+    } else if (fiber.effectTag === "UPDATE") {
+        cancelEffects(fiber);
+        if (fiber.dom != null) {
+            updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+        }
+        runEffects(fiber);
     } else if (fiber.effectTag === "DELETION") {
+        cancelEffects(fiber);
         commitDeletion(fiber, domParent);
     }
     commitWork(fiber.child);
     commitWork(fiber.sibling);
 }
+
 function commitDeletion(fiber, domParent) {
     if (fiber.dom) {
         domParent.removeChild(fiber.dom);
@@ -198,6 +207,50 @@ function useState(initial) {
     wipFiber.hooks.push(hook);
     hookIndex++;
     return [hook.state, setState];
+}
+
+function cancelEffects(fiber) {
+    if (fiber.hooks) {
+        fiber.hooks
+            .filter((hook) => hook.tag === "effect" && hook.cancel)
+            .forEach((effectHook) => {
+                effectHook.cancel();
+            });
+    }
+}
+const hasDepsChanged = (prevDeps, nextDeps) =>
+    !prevDeps ||
+    !nextDeps ||
+    prevDeps.length !== nextDeps.length ||
+    prevDeps.some((dep, index) => dep !== nextDeps[index]);
+
+function useEffect(effect, deps) {
+    const oldHook =
+        wipFiber.alternate &&
+        wipFiber.alternate.hooks &&
+        wipFiber.alternate.hooks[hookIndex];
+
+    const hasChanged = hasDepsChanged(oldHook ? oldHook.deps : undefined, deps);
+
+    const hook = {
+        tag: "effect",
+        effect: hasChanged ? effect : null,
+        cancel: hasChanged && oldHook && oldHook.cancel,
+        deps,
+    };
+
+    wipFiber.hooks.push(hook);
+    hookIndex++;
+}
+
+function runEffects(fiber) {
+    if (fiber.hooks) {
+        fiber.hooks
+            .filter((hook) => hook.tag === "effect" && hook.effect)
+            .forEach((effectHook) => {
+                effectHook.cancel = effectHook.effect();
+            });
+    }
 }
 
 function performUnitOfWork(fiber) {
@@ -275,13 +328,27 @@ const Didact = {
     createElement,
     render,
     useState,
+    useEffect,
 };
 
 /** @jsx Didact.createElement */
 function Counter() {
     const [state, setState] = Didact.useState(1);
-    const [color, setColor] = Didact.useState('black');
-    return <h1 style={{color: color}} onClick={() => {setState((c) => c + 1);setColor(() => 'red')}}>Count: {state}</h1>;
+    const [color, setColor] = Didact.useState("black");
+    Didact.useEffect(() => {
+        console.log(state);
+    }, [state]);
+    return (
+        <h1
+            style={{ color: color }}
+            onClick={() => {
+                setState((c) => c + 1);
+                setColor(() => "red");
+            }}
+        >
+            Count: {state}
+        </h1>
+    );
 }
 const element = <Counter />;
 const container = document.getElementById("root");
