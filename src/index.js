@@ -52,7 +52,9 @@ function render(element, container) {
 }
 
 const isEvent = (key) => key.startsWith("on");
-const isProperty = (key) => key !== "children";
+const isStyle = (key) => key === "style";
+const isProperty = (key) =>
+    key !== "children" && !isEvent(key) && !isStyle(key);
 const isNew = (prev, next) => (key) => prev[key] !== next[key];
 const isGone = (prev, next) => (key) => !(key in next);
 function updateDom(dom, prevProps, nextProps) {
@@ -62,6 +64,22 @@ function updateDom(dom, prevProps, nextProps) {
         .filter(isGone(prevProps, nextProps))
         .forEach((name) => {
             dom[name] = "";
+        });
+    const prevStyle = prevProps.style || {};
+    const nextStyle = nextProps.style || {};
+
+    // Remove old styles
+    Object.keys(prevStyle)
+        .filter(isGone(prevStyle, nextStyle))
+        .forEach((name) => {
+            dom.style[name] = "";
+        });
+
+    // Set new or changed styles
+    Object.keys(nextStyle)
+        .filter(isNew(prevStyle, nextStyle))
+        .forEach((name) => {
+            dom.style[name] = nextStyle[name];
         });
 
     //Remove old or changed event listeners
@@ -262,7 +280,8 @@ const Didact = {
 /** @jsx Didact.createElement */
 function Counter() {
     const [state, setState] = Didact.useState(1);
-    return <h1 onClick={() => setState((c) => c + 1)}>Count: {state}</h1>;
+    const [color, setColor] = Didact.useState('black');
+    return <h1 style={{color: color}} onClick={() => {setState((c) => c + 1);setColor(() => 'red')}}>Count: {state}</h1>;
 }
 const element = <Counter />;
 const container = document.getElementById("root");
